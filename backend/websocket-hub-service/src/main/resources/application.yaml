@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: websocket-hub-service
+
+  config:
+    import: optional:file:.env[.properties]
+
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      access-expiration: ${JWT_ACCESS_EXPIRATION}
+      refresh-expiration: ${JWT_REFRESH_EXPIRATION}
+
+  data:
+    redis:
+      enabled: ${REDIS_ENABLED:true}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}  # optional
+
+server:
+  port: 8081
+
+app:
+  game-service:
+    url: http://localhost:8082
+  user-service:
+    url: http://localhost:8083
+  bank-service:
+    url: http://localhost:8084
+
+scheduler:
+  room-cleanup:
+    scheduler-delay-minutes: 5
+    scheduler-initial-delay-minutes: 5
+    finished-kick-timeout-minutes: 2
+    pending-delete-delay-seconds: 2
+
+logging:
+  level:
+    org.springframework.web: DEBUG
+    org.springframework.web.websocket: DEBUG
