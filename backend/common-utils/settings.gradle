@@ -2,3 +2,7 @@ rootProject.name = 'common-utils'
 
 include 'security-starter'
 include 'redis-starter'
+include 'proto-module'
+include 'grpc-utils'
+include 'kafka-starter'
+include 'common-utils'

@@ -1,19 +1,21 @@
 package com.security_service.validator;
 
+import com.common_utils.exception.BadRequestException;
+import com.common_utils.exception.ConflictException;
+import com.common_utils.exception.NotFoundException;
+import com.kafka_starter.dto.event.sync.SynchronizedUser;
 import com.security_service.domain.dto.RegisterRequest;
-import com.security_service.domain.dto.UpdateRequest;
-import com.security_service.exception.EmailAlreadyExistsException;
-import com.security_service.exception.InvalidEmailFormatException;
-import com.security_service.exception.InvalidRoleException;
-import com.security_service.exception.UserNotFoundException;
 import com.security_service.repository.UserRepository;
-import com.security_starter.enums.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
 import java.util.UUID;
 import java.util.regex.Pattern;
+
+import static com.security_service.config.ResourceMessageConstants.BAD_REQUEST_EMAIL_FORMAT;
+import static com.security_service.config.ResourceMessageConstants.CONFLICT_USER_EMAIL;
+import static com.security_service.config.ResourceMessageConstants.NOT_FOUND_USER_WITH_EMAIL;
+import static com.security_service.config.ResourceMessageConstants.NOT_FOUND_USER_WITH_GUID;
 
 @Component
 @RequiredArgsConstructor
@@ -25,38 +27,25 @@ public class UserValidator implements Validator {
 
     public void validateEmailExists(String email) {
         if (repository.existsByEmail(email)) {
-            throw new EmailAlreadyExistsException("User with email=" + email + " already exists!");
+            throw new ConflictException(String.format(CONFLICT_USER_EMAIL, email));
         }
     }
 
     public void validateEmailNotExists(String email) {
         if (!repository.existsByEmail(email)) {
-            throw new UserNotFoundException("User with email=" + email + " does not exist!");
+            throw new NotFoundException(String.format(NOT_FOUND_USER_WITH_EMAIL, email));
         }
     }
 
     public void validateEmailFormat(String email) {
         if (!EMAIL_PATTERN.matcher(email.trim()).matches()) {
-            throw new InvalidEmailFormatException("Email should be valid: \"mail@example.com\"");
-        }
-    }
-
-    public void validateRoleExists(String roleName) {
-        if (Arrays.stream(Role.values())
-                .noneMatch(role -> role.name().equals(roleName))) {
-            throw new InvalidRoleException("Role " + roleName + " not found!");
-        }
-    }
-
-    public void validateIdExists(Long id) {
-        if (!repository.existsById(id)) {
-            throw new UserNotFoundException("User with id=" + id + " does not exist!");
+            throw new BadRequestException(BAD_REQUEST_EMAIL_FORMAT);
         }
     }
 
     public void validateGuidExists(UUID guid) {
         if (!repository.existsByGuid(guid)) {
-            throw new UserNotFoundException("User with guid=" + guid + " does not exist!");
+            throw new NotFoundException(String.format(NOT_FOUND_USER_WITH_GUID, guid));
         }
     }
 
@@ -70,23 +59,14 @@ public class UserValidator implements Validator {
         validateString(request.password(), "password");
     }
 
-    public void validateUpdate(UpdateRequest request) {
-        if (request.username() != null) {
-            validateString(request.username(), "username");
+    public void validateUpdate(SynchronizedUser synchronizedUser) {
+        if (synchronizedUser.getUsername() != null) {
+            validateString(synchronizedUser.getUsername(), "username");
         }
 
-        if (request.email() != null) {
-            validateString(request.email(), "email");
-            validateEmailFormat(request.email());
-        }
-
-        if (request.password() != null) {
-            validateString(request.password(), "password");
-        }
-
-        if (request.role() != null) {
-            validateString(request.role(), "role");
-            validateRoleExists(request.role());
+        if (synchronizedUser.getEmail() != null) {
+            validateString(synchronizedUser.getEmail(), "email");
+            validateEmailFormat(synchronizedUser.getEmail());
         }
     }
 }

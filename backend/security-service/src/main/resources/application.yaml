@@ -5,6 +5,10 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+  autoconfigure:
+    exclude:
+      - net.devh.boot.grpc.server.autoconfigure.GrpcServerSecurityAutoConfiguration
+
   datasource:
     url: jdbc:postgresql://${SECURITY_POSTGRES_HOST}:${SECURITY_POSTGRES_PORT}/${SECURITY_POSTGRES_DB}
     username: ${SECURITY_POSTGRES_USERNAME}
@@ -37,20 +41,42 @@ spring:
       enabled: true
       hosts: [ "127.0.0.1" ]
 
+grpc:
+  server:
+    port: 7080
+    security:
+      enabled: false
+  client:
+    user-service:
+      address: static://localhost:7093
+      negotiation-type: plaintext
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
+  client-custom:
+    timeout-seconds: 30
+    retry:
+      max-attempts: 3
+      delay-milliseconds: 1000
+
 server:
   port: 8080
+
+kafka:
+  enabled: true
+  consumer-enabled: true
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  consumer-config:
+    "[group.id]": security-service-user-sync
+    "[auto.offset.reset]": earliest
+  topics:
+    user: ${KAFKA_USER_TOPIC:user}
 
 app:
   user-service:
     url: http://localhost:8083
-#  redis:
-#    enabled: ${REDIS_ENABLED:true}
-#    host: ${REDIS_HOST:localhost}
-#    port: ${REDIS_PORT:6379}
-#    database: ${REDIS_DATABASE:0}
-#    password: ${REDIS_PASSWORD:}  # optional
 
 logging:
   level:
     org.springframework.web: DEBUG
     org.springframework.security: DEBUG
+    com.grpc_utils: DEBUG
