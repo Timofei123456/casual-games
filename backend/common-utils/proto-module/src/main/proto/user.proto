@@ -23,6 +23,8 @@ message UserResponse {
   string role = 6;
   string status = 7;
   google.protobuf.Timestamp created_at = 8;
+  string link_profile_picture = 9;
+  string link_profile_picture_mini = 10;
 }
 
 message UpdateUserRequest {
@@ -49,6 +51,10 @@ message DeleteUserRequest {
   string guid = 1;
 }
 
+message GetByGuidRequest {
+  string guid = 1;
+}
+
 service UserService {
   rpc CreateUser (CreateUserRequest) returns (UserResponse);
 
@@ -57,4 +63,6 @@ service UserService {
   rpc UpdateUserRole(UpdateUserRoleRequest) returns (google.protobuf.Empty);
 
   rpc DeleteUser (DeleteUserRequest) returns (google.protobuf.Empty);
+
+  rpc GetByGuid (GetByGuidRequest) returns (UserResponse);
 }

@@ -1,29 +1,25 @@
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AppDispatch, RootState } from "../../store/store";
+import type { RootState } from "../../store/store";
 import { useGameToast } from "../../hooks/useGameToast";
 import { useSystemToastContext } from "../../providers/SystemToastContext";
 import { useSliceErrorToast } from "../../hooks/useSliceErrorToast";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { clearError, getRoomById } from "../../store/slices/DurakRoomSlice";
+import { useCallback, useRef, useState } from "react";
+import { clearError } from "../../store/slices/DurakRoomSlice";
 import type { CardSuit, DurakAction, DurakCard, DurakPhase, DurakTablePair } from "../../models/Durak";
-import { findByGuid } from "../../store/slices/UserSlice";
-import { MAX_RECONNECT_ATTEMPTS, useWebSocket } from "../../hooks/useWebSocket";
 import type { DurakGameMessage } from "../../models/WsMessage";
 import { useDurakMessages } from "../../hooks/useDurakMessages";
-import LoadingPage from "../LoadingPage";
-import InvalidRoomPage from "./InvalidRoomPage";
-import type { ErrorResponse } from "../../helpers/ApiErrorHelper";
-import { Box, Button, Card, Container, Stack, ToastContainer, Typography } from "../../ui";
+import { Avatar, Box, Button, Card, Container, Stack, ToastContainer, Typography } from "../../ui";
 import { DurakBoard } from "./durak/components/DurakBoard";
 import { BettingPanel } from "./durak/components/BettingPanel";
 import { GameOverOverlay } from "./durak/components/GameOverOverlay";
+import { MiniProfile } from "../profile/components/MiniProfile";
+import { useGameSocket } from "../../hooks/useGameSocket";
 
 export type TableExitMode = "bita" | "pickup" | null;
 
 export default function DurakRoom() {
     const navigate = useNavigate();
-    const dispatch = useDispatch<AppDispatch>();
 
     const guid = useSelector((state: RootState) => state.auth.user?.guid);
     const balance = useSelector((state: RootState) => state.user.user?.balance);
@@ -34,9 +30,6 @@ export default function DurakRoom() {
     const { toasts, showGameToast, dismiss } = useGameToast();
     const { showSystemToast } = useSystemToastContext();
     useSliceErrorToast((state: RootState) => state.durakRoom.errors, clearError);
-
-    const [isLoading, setIsLoading] = useState(true);
-    const [roomError, setRoomError] = useState<ErrorResponse | null>(null);
 
     const [ready, setReady] = useState(false);
     const [betInput, setBetInput] = useState("");
@@ -66,60 +59,30 @@ export default function DurakRoom() {
     const prevPhaseRef = useRef<DurakPhase | null>(null);
 
     const [awaitingResponse, setAwaitingResponse] = useState(false);
+    const [gameAborted, setGameAborted] = useState(false);
 
-    const myName = guid && players ? (players[guid] ?? "You") : "You";
+    const myName = guid && players ? (players[guid]?.username ?? "You") : "You";
     const opponentName = guid && players
-        ? (Object.entries(players).find(([g]) => g !== guid)?.[1] ?? "Opponent")
+        ? (Object.values(players).find((p) => p.guid !== guid)?.username ?? "Opponent")
         : "Opponent";
 
     const isOpponentAttacker = !!attackerId && !!guid && attackerId !== guid;
 
-    useEffect(() => {
-        if (!roomId || !guid) {
-            navigate("/rooms");
-            return;
-        }
-
-        setIsLoading(true);
-        setRoomError(null);
-
-        Promise.all([
-            dispatch(getRoomById({ roomId })),
-            dispatch(findByGuid(guid)),
-        ])
-            .then(([roomResult]) => {
-                if (getRoomById.rejected.match(roomResult)) {
-                    setRoomError(roomResult.payload ?? { message: "Failed to fetch room" });
-                }
-            })
-            .finally(() => setIsLoading(false));
-    }, [dispatch, guid, navigate, roomId]);
-
     const handleDisplaced = useCallback(() => {
+        console.warn("[DurakRoom] session displaced");
         showSystemToast("Your session was opened in another window", "system-error");
         navigate("/rooms");
     }, [navigate, showSystemToast]);
 
     const handleDisconnect = useCallback(() => {
+        console.warn("[DurakRoom] connection lost");
         showSystemToast("Connection lost. Redirecting to rooms...", "system-error");
         setTimeout(() => navigate("/rooms"), 3000);
     }, [navigate, showSystemToast]);
 
-    const { isConnected, message, send, reconnectAttempt } = useWebSocket<DurakGameMessage>(
-        roomId,
-        room?.type,
-        handleDisconnect,
-        handleDisplaced,
-    );
-
-    useEffect(() => {
-        if (reconnectAttempt > 0) {
-            showSystemToast(
-                `Connection lost. Reconnecting... (${reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})`,
-                "system-error"
-            );
-        }
-    }, [reconnectAttempt, showSystemToast]);
+    const handleSocketError = useCallback(() => {
+        setAwaitingResponse(false);
+    }, []);
 
     const processGameState = useCallback((msg: DurakGameMessage) => {
         const prevTable = prevTableRef.current;
@@ -163,87 +126,75 @@ export default function DurakRoom() {
         setAwaitingResponse(false);
     }, []);
 
-    const processReset = useCallback(() => {
-        showGameToast("Your opponent left the room. Waiting for a new player...", "game-info");
-        setIsGame(false);
-        setPhase(null);
-        setMyCards([]);
-        setOpponentCardCount(0);
-        setDeckCardsLeft(0);
-        setTrumpCard(null);
-        setTrumpSuit(null);
-        setTable([]);
-        setIsMyTurn(false);
-        setAvailableActions([]);
-        setRemainingSeconds(null);
-        setDiscardCount(0);
-        setWinnerId(undefined);
-        setAttackerId(null);
-        setTableExitMode(null);
-        setIsDealAnimation(false);
-        wasGameRef.current = false;
-        setReady(false);
-        setBetPlaced(false);
-        setBetInput("");
-        prevTableRef.current = [];
-        prevPhaseRef.current = null;
-    }, [showGameToast]);
+    const processAbort = useCallback(() => {
+        console.warn("[DurakRoom] game aborted — opponent left");
+        setGameAborted(true);
+        showGameToast("Opponent left the game. Redirecting to rooms...", "game-info");
+        setTimeout(() => navigate("/rooms"), 3000);
+    }, [navigate, showGameToast]);
+
+    const handleMessage = useDurakMessages({
+        roomId,
+        isGame,
+        gameAborted,
+        processGameState,
+        processGameOver,
+        processAbort,
+        setBetPlaced,
+        setReady,
+        setRemainingSeconds,
+        setDiscardCount,
+        prevTableRef,
+        prevPhaseRef,
+        showGameToast,
+    });
+
+    const { isConnected, send } = useGameSocket<DurakGameMessage>({
+        roomId,
+        roomType: room?.type,
+        showGameToast,
+        onGameMessage: handleMessage,
+        onError: handleSocketError,
+        onDisplaced: handleDisplaced,
+        onConnectionLost: handleDisconnect,
+    });
 
     const handleDealComplete = useCallback(() => {
         setIsDealAnimation(false);
     }, []);
 
-    useDurakMessages({
-        message,
-        isConnected,
-        guid,
-        roomId,
-        room,
-        isGame,
-        processGameState,
-        processGameOver,
-        processReset,
-        setBetPlaced,
-        setReady,
-        setRemainingSeconds,
-        setAwaitingResponse,
-        setDiscardCount,
-        prevTableRef,
-        prevPhaseRef,
-        showGameToast,
-        showSystemToast,
-        dispatch,
-    });
-
     const handlePlayCard = useCallback((card: DurakCard) => {
-        if (!room || !isConnected || !guid || awaitingResponse) {
+        if (!room || !isConnected || !guid || awaitingResponse || gameAborted) {
             return;
         }
 
+        console.debug("[DurakRoom] send MOVE PLAY_CARD", card);
         setAwaitingResponse(true);
         send({ type: "USER_MESSAGE", event: "MOVE", fromUserId: guid, roomId: room.id, action: "PLAY_CARD", card });
-    }, [awaitingResponse, guid, isConnected, room, send]);
+    }, [awaitingResponse, gameAborted, guid, isConnected, room, send]);
 
     const handlePass = useCallback(() => {
-        if (!room || !isConnected || !guid || awaitingResponse) {
+        if (!room || !isConnected || !guid || awaitingResponse || gameAborted) {
             return;
         }
 
+        console.debug("[DurakRoom] send MOVE PASS");
         setAwaitingResponse(true);
         send({ type: "USER_MESSAGE", event: "MOVE", fromUserId: guid, roomId: room.id, action: "PASS" });
-    }, [awaitingResponse, guid, isConnected, room, send]);
+    }, [awaitingResponse, gameAborted, guid, isConnected, room, send]);
 
     const handleTakeCards = useCallback(() => {
-        if (!room || !isConnected || !guid || awaitingResponse) {
+        if (!room || !isConnected || !guid || awaitingResponse || gameAborted) {
             return;
         }
 
+        console.debug("[DurakRoom] send MOVE TAKE_CARDS");
         setAwaitingResponse(true);
         send({ type: "USER_MESSAGE", event: "MOVE", fromUserId: guid, roomId: room.id, action: "TAKE_CARDS" });
-    }, [awaitingResponse, guid, isConnected, room, send]);
+    }, [awaitingResponse, gameAborted, guid, isConnected, room, send]);
 
     const handlePlaceBet = () => {
-        if (!room || !isConnected || !guid || betPlaced) {
+        if (!room || !isConnected || !guid || betPlaced || gameAborted) {
             return;
         }
 
@@ -258,11 +209,13 @@ export default function DurakRoom() {
             showGameToast("Insufficient balance", "game-error");
             return;
         }
+
+        console.debug("[DurakRoom] send BET");
         send({ type: "USER_MESSAGE", event: "BET", fromUserId: guid, roomId: room.id, bet: amount });
     };
 
     const handleReady = () => {
-        if (!room || !isConnected || ready) {
+        if (!room || !isConnected || ready || gameAborted) {
             return;
         }
 
@@ -271,32 +224,17 @@ export default function DurakRoom() {
             return;
         }
 
+        console.debug("[DurakRoom] send READY");
         send({ type: "USER_MESSAGE", event: "READY", roomId: room.id });
         setReady(true);
     };
 
     const handleLeave = () => navigate("/rooms");
 
-    if (isLoading) {
-        return <LoadingPage />;
-    }
-
-    if (roomError) {
-        return <InvalidRoomPage message={roomError.message} />;
-    }
-
     const isGameOver = winnerId !== undefined;
 
     return (
-        <Box style={{
-            minHeight: "calc(100vh - 60px - 50px)",
-            margin: "0 10rem",
-            padding: "0 1rem",
-            background: "var(--color-bg-glass)",
-            backdropFilter: "blur(2px)",
-            borderRadius: "var(--radius-md)",
-            boxShadow: "var(--shadow-lg)",
-        }}>
+        <Box className="page-wrapper">
             <Container>
                 <Box style={{ padding: "2rem 0 1rem" }}>
                     <Typography variant="h2" style={{ textAlign: "center" }}>
@@ -345,7 +283,7 @@ export default function DurakRoom() {
                             onPlayCard={handlePlayCard}
                             onPass={handlePass}
                             onTakeCards={handleTakeCards}
-                            disabled={awaitingResponse || isDealAnimation}
+                            disabled={awaitingResponse || isDealAnimation || gameAborted}
                         />
                     )}
 
@@ -368,8 +306,44 @@ export default function DurakRoom() {
                         }}>
                             <Stack gap="1rem" align="center" justify="center" style={{ paddingTop: "1rem" }}>
                                 <Typography variant="h3">Players</Typography>
-                                {Object.values(players ?? {}).map(username => (
-                                    <Typography key={username} variant="body">{username}</Typography>
+                                {Object.entries(players ?? {}).map(([playerGuid, player]) => (
+                                    <MiniProfile
+                                        key={playerGuid}
+                                        guid={playerGuid}
+                                        username={player.username}
+                                        status={player.status}
+                                        avatarUrl={player.linkProfilePictureMini}
+                                        avatarUrlFull={player.linkProfilePicture}>
+                                        <Stack
+                                            direction="row"
+                                            align="center"
+                                            gap="0.75rem"
+                                            style={{
+                                                cursor: "pointer",
+                                                width: "200px",
+                                                padding: "0.35rem",
+                                                paddingRight: "1rem",
+                                                background: "var(--color-bg-glass)",
+                                                border: "1px solid var(--color-border)",
+                                                borderRadius: "var(--radius-md)",
+                                                boxShadow: "var(--shadow-sm)",
+                                                transition: "all 0.2s ease",
+                                                userSelect: "none"
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.boxShadow = "var(--shadow-md)";
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                                            }}
+                                        >
+                                            <Avatar src={player.linkProfilePictureMini} fallback={player.username} size={40} />
+
+                                            <Typography variant="body" style={{ fontWeight: "bold" }}>
+                                                {player.username}
+                                            </Typography>
+                                        </Stack>
+                                    </MiniProfile>
                                 ))}
                             </Stack>
                             <Box />
@@ -391,6 +365,6 @@ export default function DurakRoom() {
             </Container>
 
             <ToastContainer layer="game" toasts={toasts} dismiss={dismiss} />
-        </Box>
+        </Box >
     );
 }

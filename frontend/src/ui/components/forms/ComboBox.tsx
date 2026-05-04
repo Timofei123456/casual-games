@@ -1,10 +1,13 @@
-import { useState, useRef, useEffect, type HTMLAttributes } from "react";
+import { useState, useRef, useEffect, type HTMLAttributes, type ReactNode } from "react";
 import "../styles/combobox.css";
 import { classNames } from "../../utils/classNames";
+import { Icon } from "../common/Icon";
+import { useThemedIcon } from "../../hooks/useThemedIcon";
 
 type ComboBoxOption = {
     value: string;
-    label: string;
+    label: ReactNode | ((selected: boolean) => ReactNode);
+    searchLabel?: string;
 };
 
 type Transparency = "easy" | "medium" | "hard";
@@ -35,42 +38,41 @@ export function ComboBox({
     const [searchQuery, setSearchQuery] = useState("");
     const selectRef = useRef<HTMLDivElement>(null);
 
+    const { getInverseIcon } = useThemedIcon();
+
     const selectedOption = options.find((opt) => opt.value === value);
-    const displayValue = selectedOption ? selectedOption.label : placeholder;
+
+    const renderLabel = (opt: ComboBoxOption, isSelected: boolean) => {
+        if (typeof opt.label === "function") {
+            return opt.label(isSelected);
+        }
+        return opt.label;
+    };
+
+    const displayValue = selectedOption ? renderLabel(selectedOption, false) : placeholder;
 
     const filteredOptions = isSearchable
-        ? options.filter((opt) =>
-            typeof opt.label === "string" &&
-            opt.label.toLowerCase().includes(searchQuery.toLowerCase())
-        )
+        ? options.filter((opt) => {
+            const text = opt.searchLabel || (typeof opt.label === "string" ? opt.label : "");
+            return text.toLowerCase().includes(searchQuery.toLowerCase());
+        })
         : options;
 
     const getTransparencyClass = () => {
-        if (!transparency) {
-            return "";
-        }
-
+        if (!transparency) return "";
         return `transparency-${transparency}`;
     };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (
-                selectRef.current &&
-                !selectRef.current.contains(event.target as Node)
-            ) {
+            if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
                 setSearchQuery("");
             }
         };
 
-        if (isOpen) {
-            document.addEventListener("mousedown", handleClickOutside);
-        }
-
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
+        if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [isOpen]);
 
     const handleSelect = (optionValue: string) => {
@@ -92,19 +94,22 @@ export function ComboBox({
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
                     />
-                    <span className="select-arrow">▼</span>
+                    <Icon
+                        src={getInverseIcon("expandMore")}
+                        alt="arrow"
+                        className="select-arrow"
+                        size={16}
+                        style={{ transform: "rotate(180deg)", transition: "transform 0.15s" }} />
                 </div>
             ) : (
                 <div
                     className={classNames("select-trigger", disabled && "disabled", isOpen && "open")}
                     onClick={() => !disabled && setIsOpen(!isOpen)}
                 >
-                    <span
-                        className={classNames("select-value", !selectedOption && "placeholder")}
-                    >
+                    <span className={classNames("select-value", !selectedOption && "placeholder")}>
                         {displayValue}
                     </span>
-                    <span className="select-arrow">▼</span>
+                    <Icon src={getInverseIcon("expandMore")} alt="arrow" className="select-arrow" size={16} />
                 </div>
             )}
 
@@ -112,15 +117,18 @@ export function ComboBox({
                 <div className={classNames("select-dropdown", getTransparencyClass())}>
                     <div className="select-options">
                         {filteredOptions.length > 0 ? (
-                            filteredOptions.map((option) => (
-                                <div
-                                    key={option.value}
-                                    className={classNames("select-option", value === option.value && "selected")}
-                                    onClick={() => handleSelect(option.value)}
-                                >
-                                    {option.label}
-                                </div>
-                            ))
+                            filteredOptions.map((option) => {
+                                const isSelected = value === option.value;
+                                return (
+                                    <div
+                                        key={option.value}
+                                        className={classNames("select-option", isSelected && "selected")}
+                                        onClick={() => handleSelect(option.value)}
+                                    >
+                                        {renderLabel(option, isSelected)}
+                                    </div>
+                                );
+                            })
                         ) : (
                             <div className="select-option no-results">
                                 No results found

@@ -6,7 +6,7 @@ spring:
     import: optional:file:.env[.properties]
 
   datasource:
-    url: jdbc:postgresql://${GAME_POSTGRES_HOST:localhost}:${GAME_POSTGRES_PORT:5432}/${GAME_POSTGRES_DB:diploma}
+    url: jdbc:postgresql://${GAME_POSTGRES_HOST:localhost}:${GAME_POSTGRES_PORT:5432}/${GAME_POSTGRES_DB:diploma}?currentSchema=${GAME_DB_DEFAULT_SCHEMA:game_service}
     username: ${GAME_POSTGRES_USERNAME:postgres}
     password: ${GAME_POSTGRES_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -14,14 +14,23 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     enabled: true
+    default-schema: game_service
+    liquibase-schema: game_service
 
   jpa:
     hibernate:
       ddl-auto: none
-    show-sql: true
+    properties:
+      hibernate:
+        default_schema: game_service
+        jdbc:
+          time_zone: UTC
 
 server:
   port: 8082
+  forward-headers-strategy: framework
+
+server-url: ${SERVER_URL:http://localhost:8082}
 
 kafka:
   enabled: ${KAFKA_ENABLED:true}
@@ -35,4 +44,13 @@ kafka:
 
 logging:
   level:
-    org.springframework.web: DEBUG
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+
+springdoc:
+  preLoadingEnabled: true
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html

@@ -5,15 +5,33 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 5MB
+      max-request-size: 12MB
+      file-size-threshold: 5MB
+
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: jdbc:postgresql://${USER_POSTGRES_HOST:localhost}:${USER_POSTGRES_PORT:5432}/${USER_POSTGRES_DB:diploma}?currentSchema=${USER_DB_DEFAULT_SCHEMA:user_service}
+    username: ${USER_POSTGRES_USERNAME:postgres}
+    password: ${USER_POSTGRES_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    enabled: true
+    default-schema: user_service
+    liquibase-schema: user_service
 
   jpa:
     hibernate:
       ddl-auto: none
+    properties:
+      hibernate:
+        default_schema: user_service
+        jdbc:
+          time_zone: UTC
 
   data:
     redis:
@@ -26,18 +44,22 @@ spring:
   security:
     jwt:
       secret: ${JWT_SECRET}
-      access-expiration: ${JWT_ACCESS_EXPIRATION:900000}      # 15 minutes default
+      access-expiration: ${JWT_ACCESS_EXPIRATION:600000}      # 10 minutes default
       refresh-expiration: ${JWT_REFRESH_EXPIRATION:86400000}  # 24 hours default
+      public-paths:
+        - /v3/api-docs/**
+        - /swagger-ui.html
+        - /swagger-ui/**
+        - /webjars/**
     service-whitelist:
-      enabled: true
+      enabled: ${SERVICE_WHITELIST_ENABLED:true}
       hosts: [ "127.0.0.1" ]
-
-  liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-    enabled: true
 
 server:
   port: 8083
+  forward-headers-strategy: framework
+
+server-url: ${SERVER_URL:http://localhost:8083}
 
 grpc:
   server:
@@ -46,7 +68,7 @@ grpc:
       enabled: false
   client:
     security-service:
-      address: static://localhost:7080
+      address: ${GRPC_SECURITY_SERVICE_ADDRESS:static://localhost:7090}
       negotiation-type: plaintext
       enable-keep-alive: true
       keep-alive-time: 30s
@@ -63,15 +85,50 @@ kafka:
   bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
   topics:
     user: ${KAFKA_USER_TOPIC:user}
+    update-subscription: ${KAFKA_UPDATE_SUBSCRIPTION_TOPIC:update-subscription}
   transactional-outbox:
     enabled: true
 
-app:
-  security-service:
-    url: http://localhost:8080
+cron:
+  update-user-subscriptions: ${CRON_UPDATE_USER_SUBSCRIPTIONS:0 0 2 * * *}
+
+aws:
+  s3:
+    enabled-s3-config: true
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9001}
+    region: ${MINIO_REGION:eu-north-1}
+    access-key-id: ${MINIO_ACCESS_KEY}
+    secret-access-key: ${MINIO_SECRET_KEY}
+
+attachments:
+  by-type:
+    PROFILE_PICTURE:
+      bucket: ${PROFILE_PICTURE_BUCKET:user-profile-picture}
+      folder: ${PROFILE_PICTURE_FOLDER:user-profile-pictures/}
+      public-base-url: ${MINIO_PUBLIC_BASE_URL:http://localhost:9001}
+      cache-control: "public, max-age=31536000, immutable"
+      allowed-mime-types:
+        - image/jpeg
+        - image/png
+      variants:
+        full:
+          max-file-size: 5MB
+          max-dimension-px: 1024
+        mini:
+          max-file-size: 256KB
+          max-dimension-px: 256
 
 logging:
   level:
-    org.springframework.web: DEBUG
-    org.springframework.security: DEBUG
-    com.grpc_utils: DEBUG
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    org.springframework.security: ${LOG_LEVEL_SPRING_SECURITY:INFO}
+    com.grpc_utils: ${LOG_LEVEL_GRPC:INFO}
+
+springdoc:
+  preLoadingEnabled: true
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html

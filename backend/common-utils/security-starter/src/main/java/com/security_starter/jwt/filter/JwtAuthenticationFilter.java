@@ -1,8 +1,8 @@
 package com.security_starter.jwt.filter;
 
+import com.common_utils.exception.JwtException;
 import com.security_starter.config.AuthenticationToken;
 import com.security_starter.enums.Status;
-import com.security_starter.exception.JwtException;
 import com.security_starter.jwt.JwtClaimsExtractor;
 import com.security_starter.provider.PermissionProvider;
 import com.security_starter.validator.JwtValidator;
@@ -97,6 +97,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private AuthenticationToken createAuthentication(String jwt) {
         UUID guid = claimsExtractor.extractGuid(jwt);
+        UUID sid = claimsExtractor.extractSid(jwt);
         String email = claimsExtractor.extractEmail(jwt);
         Status status = claimsExtractor.extractStatus(jwt);
         Set<String> roles = claimsExtractor.extractRoles(jwt) != null
@@ -105,12 +106,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         Set<String> permissions = permissionProvider.loadPermissions(roles, email);
 
-        return AuthenticationToken.authenticated(guid, email, status, roles, permissions, Map.of());
+        return AuthenticationToken.authenticated(guid, sid, email, status, roles, permissions, Map.of());
     }
 
     private void setServiceToServiceAuthentication() {
         SecurityContextHolder.getContext().setAuthentication(
                 new AuthenticationToken(
+                        null,
                         null,
                         "service-to-service",
                         null,

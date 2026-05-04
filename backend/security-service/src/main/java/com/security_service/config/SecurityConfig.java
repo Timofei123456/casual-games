@@ -1,7 +1,7 @@
 package com.security_service.config;
 
-import com.security_starter.exception.handler.JwtAccessDeniedHandler;
-import com.security_starter.exception.handler.JwtAuthenticationEntryPoint;
+import com.security_starter.exception.JwtAccessDeniedHandler;
+import com.security_starter.exception.JwtAuthenticationEntryPoint;
 import com.security_starter.jwt.filter.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -14,7 +14,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -29,19 +28,24 @@ public class SecurityConfig {
 
     private final JwtAccessDeniedHandler accessDeniedHandler;
 
-    private final CorsConfigurationSource corsConfigurationSource;
-
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
         return httpSecurity
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource))
+                .cors(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/auth/ws-ticket").authenticated()
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/webjars/**"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exception -> exception

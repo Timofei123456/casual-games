@@ -2,49 +2,18 @@ import { useDispatch, useSelector } from "react-redux";
 import { useNavigate, useLocation } from "react-router-dom";
 import type { AppDispatch, RootState } from "../../store/store";
 import { useEffect, useState, useMemo } from "react";
-import { Box, Button, Card, Container, Icon, Modal, ComboBox, Stack, FormField, Textfield, Typography, useThemedIcon, Grid, CheckBox, Divider } from "../../ui";
-import { ROOM_TYPE_HANDLERS, ROOM_TYPE_LABELS, type Room, type RoomType } from "../../models/Room";
+import { motion, AnimatePresence } from "framer-motion";
+import { Box, Button, Card, Container, Icon, Modal, ComboBox, Stack, Textfield, Typography, useThemedIcon, Grid, Divider } from "../../ui";
+import { CreateRoomCard } from "./components/CreateRoomCard";
+import { RoomsFilterPanel } from "./components/RoomsFilterPanel";
+import { ROOM_TYPE_HANDLERS, ROOM_TYPE_LABELS, type Room, type RoomType, type RoomSortField, type SortDirection, type RoomFilterRequest } from "../../models/Room";
 import { validateRoomName } from "../../utils/SecurityUtils";
-import { clearError, createRoom, getRooms } from "../../store/slices/RoomSlice";
+import { clearError, createRoom, searchRooms } from "../../store/slices/RoomSlice";
 import { useSliceErrorToast } from "../../hooks/useSliceErrorToast";
-
-type SortOption = 'newest' | 'alphabet';
-type SortDirection = 'asc' | 'desc';
+import { useSystemToastContext } from "../../providers/SystemToastContext";
+import "./style/Rooms.css"
 
 const AVAILABLE_ROOM_TYPES = Object.keys(ROOM_TYPE_LABELS) as RoomType[];
-
-function CreateRoomCard({ onClick }: { onClick: () => void }) {
-    const [hovered, setHovered] = useState(false);
-    const [pressed, setPressed] = useState(false);
-    const { getIcon } = useThemedIcon();
-
-    return (
-        <Card
-            onClick={onClick}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => { setHovered(false); setPressed(false); }}
-            onMouseDown={() => setPressed(true)}
-            onMouseUp={() => setPressed(false)}
-            style={{
-                width: "180px",
-                height: "180px",
-                textAlign: "center",
-                padding: "20px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                background: "var(--color-bg-glass)",
-                borderRadius: "var(--radius-md)",
-                boxShadow: hovered ? "var(--shadow-lg)" : "var(--shadow-md)",
-                transform: pressed ? "scale(0.95)" : hovered ? "scale(1.05)" : "scale(1)",
-            }}
-        >
-            <Icon src={getIcon("add")} alt="add" size={50} />
-        </Card>
-    );
-}
 
 export default function Rooms() {
     const navigate = useNavigate();
@@ -52,91 +21,137 @@ export default function Rooms() {
     const dispatch = useDispatch<AppDispatch>();
 
     const authentication = useSelector((state: RootState) => state.auth);
-    const { rooms } = useSelector((state: RootState) => state.rooms);
+    const { groupedRooms: backendGroupedRooms } = useSelector((state: RootState) => state.rooms);
 
     const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState<boolean>(false);
+    const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState<boolean>(false);
+
     const [roomName, setRoomName] = useState<string>("");
     const [roomType, setRoomType] = useState<RoomType>();
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [sortOption, setSortOption] = useState<SortOption>('newest');
-    const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+    const [sortOption, setSortOption] = useState<RoomSortField>('CREATED_AT');
+    const [sortDirection, setSortDirection] = useState<SortDirection>('DESC');
     const [selectedTypes, setSelectedTypes] = useState<RoomType[]>([]);
+
+    const [appliedFilters, setAppliedFilters] = useState<RoomFilterRequest>({
+        name: "",
+        types: [],
+        sortField: "CREATED_AT",
+        sortDirection: "DESC"
+    });
+
     const [isTypesExpanded, setIsTypesExpanded] = useState<boolean>(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const { getIcon, getInverseIcon } = useThemedIcon();
+    const { showSystemToast } = useSystemToastContext();
+
     const [validationError, setValidationError] = useState<string>("");
 
     useSliceErrorToast((state: RootState) => state.rooms.errors, clearError);
 
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     useEffect(() => {
-        dispatch(getRooms());
-    }, [dispatch]);
+        const handleResize = () => setWindowWidth(window.innerWidth);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
+    const isMobile = windowWidth <= 900;
+
+    useEffect(() => {
+        dispatch(searchRooms(appliedFilters));
+
+        const intervalId = setInterval(() => {
+            if (!document.hidden) {
+                dispatch(searchRooms(appliedFilters));
+            }
+        }, 60000);
+
+        return () => clearInterval(intervalId);
+    }, [dispatch, appliedFilters]);
 
     useEffect(() => {
         const state = location.state as { preselectRoomType?: RoomType } | null;
 
         if (state?.preselectRoomType) {
-            setSelectedTypes([state.preselectRoomType]);
+            const types = [state.preselectRoomType];
+            setSelectedTypes(types);
+
+            setAppliedFilters(prev => ({ ...prev, types }));
 
             setIsTypesExpanded(true);
-
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.pathname, location.state, navigate]);
 
-    const groupedRooms = useMemo(() => {
-        if (!rooms) return [];
+    const handleResetFilters = () => {
+        setSearchQuery("");
+        setSelectedTypes([]);
+        setSortOption('CREATED_AT');
+        setSortDirection('DESC');
 
-        let result = rooms.map((room, index) => ({ room, index }));
+        setAppliedFilters({
+            name: "",
+            types: [],
+            sortField: "CREATED_AT",
+            sortDirection: "DESC"
+        });
+    };
+    const hasUnappliedFilters = useMemo(() => {
+        if (searchQuery !== (appliedFilters.name || "")) return true;
+        if (sortOption !== appliedFilters.sortField) return true;
+        if (sortDirection !== appliedFilters.sortDirection) return true;
 
-        if (searchQuery) {
-            const q = searchQuery.toLowerCase();
-            result = result.filter(r => r.room.name.toLowerCase().includes(q));
+        const appliedSet = new Set(appliedFilters.types || []);
+        if (selectedTypes.length !== appliedSet.size) return true;
+        return selectedTypes.some(t => !appliedSet.has(t));
+    }, [searchQuery, sortOption, sortDirection, selectedTypes, appliedFilters]);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            await dispatch(searchRooms(appliedFilters)).unwrap();
+            showSystemToast("Rooms list updated successfully", "system-info");
+        } catch { /* empty */ } finally {
+            setIsRefreshing(false);
         }
+    };
 
-        const activeTypes = selectedTypes.length > 0 ? [...selectedTypes] : [...AVAILABLE_ROOM_TYPES];
-        result = result.filter(r => activeTypes.includes(r.room.type));
-
-        const groups: Record<string, typeof result> = {};
-
-        activeTypes.forEach(type => {
-            groups[type] = [];
+    const handleApplyFilters = () => {
+        setAppliedFilters({
+            name: searchQuery,
+            types: selectedTypes,
+            sortField: sortOption,
+            sortDirection: sortDirection
         });
 
-        result.forEach(r => {
-            if (groups[r.room.type]) {
-                groups[r.room.type].push(r);
-            }
-        });
+        if (isMobileFiltersOpen) {
+            setIsMobileFiltersOpen(false);
+        }
+    };
 
-        return activeTypes
-            .map(type => {
-                const groupRooms = groups[type];
+    const displayGroups = useMemo(() => {
+        if (!backendGroupedRooms) return [];
 
-                groupRooms.sort((a, b) => {
-                    let cmp = 0;
-                    if (sortOption === 'alphabet') {
-                        cmp = a.room.name.localeCompare(b.room.name, 'en', { numeric: true });
-                    } else {
-                        cmp = a.index - b.index;
-                    }
-                    return sortDirection === 'asc' ? cmp : -cmp;
-                });
+        const typesToRender = appliedFilters.types && appliedFilters.types.length > 0
+            ? appliedFilters.types
+            : AVAILABLE_ROOM_TYPES;
 
-                return {
-                    type: type as RoomType,
-                    rooms: groupRooms.map(r => r.room)
-                };
-            });
-    }, [rooms, searchQuery, selectedTypes, sortOption, sortDirection]);
+        return [...typesToRender]
+            .sort((a, b) => ROOM_TYPE_LABELS[a].localeCompare(ROOM_TYPE_LABELS[b]))
+            .map(type => ({
+                type,
+                rooms: backendGroupedRooms[type] || []
+            }));
+    }, [backendGroupedRooms, appliedFilters.types]);
 
-    const handleSortClick = (option: SortOption) => {
-        if (sortOption === option) {
-            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    const handleSortClick = (field: RoomSortField) => {
+        if (sortOption === field) {
+            setSortDirection(prev => prev === 'ASC' ? 'DESC' : 'ASC');
         } else {
-            setSortOption(option);
-            setSortDirection('asc');
+            setSortOption(field);
+            setSortDirection(field === 'CREATED_AT' ? 'DESC' : 'ASC');
         }
     };
 
@@ -184,207 +199,77 @@ export default function Rooms() {
             return;
         }
 
-        const roomResponse = await dispatch(createRoom({ roomName: validatedName, roomType })).unwrap().catch(() => null);
-        if (!roomResponse) return;
-
-        setRoomName("");
-        setRoomType(undefined);
-        setIsCreateRoomModalOpen(false);
-        navigateToRoom(roomResponse);
+        try {
+            const roomResponse = await dispatch(createRoom({ roomName: validatedName, roomType })).unwrap();
+            setRoomName("");
+            setRoomType(undefined);
+            setIsCreateRoomModalOpen(false);
+            navigateToRoom(roomResponse);
+        } catch { /* empty */ }
     };
 
     const navigateToRoom = (room: Room) => {
         navigate(`/room/${ROOM_TYPE_HANDLERS[room.type]}/${encodeURIComponent(room.name)}/${room.id}`);
     };
 
+    const filterPanelProps = {
+        searchQuery,
+        onSearchChange: setSearchQuery,
+        isRefreshing,
+        onRefresh: handleRefresh,
+        sortOption,
+        sortDirection,
+        onSortClick: handleSortClick,
+        isTypesExpanded,
+        onToggleTypesExpanded: () => setIsTypesExpanded(!isTypesExpanded),
+        selectedTypes,
+        onToggleType: handleToggleType,
+        hasUnappliedFilters,
+        onApplyFilters: handleApplyFilters,
+    };
+
+
     return (
-        <Box style={{
-            height: "calc(100vh - 60px - 50px)",
-            margin: "0 10rem",
-            padding: "0 1rem",
-            background: "var(--color-bg-glass)",
-            backdropFilter: "blur(2px)",
-            borderRadius: "var(--radius-md)",
-            boxShadow: "var(--shadow-lg)"
-        }}>
+        <Box className="page-wrapper rooms-page" style={{ overflow: "hidden" }}>
             <Container>
 
-                <Box style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "1.5rem 0 1rem",
-                }}>
+                <Box style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.5rem 0 1rem", flexWrap: "wrap", gap: "1rem" }}>
                     <Typography variant="h2">Rooms</Typography>
-                    <Button variant="solid" onClick={() => handleOpenCreateModal()} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <Icon src={getInverseIcon("add")} alt="add" size={17} />
-                        <Typography variant="body" inverse style={{ fontSize: "16px", fontWeight: 500 }}>
-                            Create Room
-                        </Typography>
-                    </Button>
+
+                    <Stack direction="row" gap="1rem">
+                        {isMobile && (
+                            <Button variant="outline" onClick={() => setIsMobileFiltersOpen(true)} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <Icon src={getIcon("filter")} alt="filters" size={17} />
+                                <Typography variant="body" style={{ fontSize: "16px", fontWeight: 500 }}>
+                                    Filters
+                                </Typography>
+                            </Button>
+                        )}
+                        <Button variant="solid" onClick={() => handleOpenCreateModal()} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <Icon src={getInverseIcon("add")} alt="add" size={17} />
+                            <Typography variant="body" inverse style={{ fontSize: "16px", fontWeight: 500 }}>
+                                Create Room
+                            </Typography>
+                        </Button>
+                    </Stack>
                 </Box>
 
                 <Divider style={{ margin: "1rem 0" }} />
 
-                <Grid
-                    columns="280px 1fr"
-                    gap="2rem"
-                    style={{
-                        height: "calc(100vh - 60px - 50px - 8.5rem)",
-                        alignItems: "start"
-                    }}
-                >
+                <div className="rooms-grid">
 
-                    <Stack
-                        gap="1.5rem"
-                        style={{
-                            height: "100%",
-                            overflowY: "auto",
-                            paddingRight: "0.5rem",
-                            borderRadius: "var(--radius-md)",
-                            boxShadow: "var(--shadow-md)",
-                            backdropFilter: "blur(2px)",
-                            padding: "1.25rem 1.5rem",
-                        }}
-                    >
-                        <FormField
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search by name"
-                            rounded
-                            endAdornmentSrc={getIcon("search")}
-                            endAdornmentAlt="search"
-                            style={{ flexShrink: 0 }}
-                        />
+                    <div className="rooms-sidebar">
+                        <RoomsFilterPanel {...filterPanelProps} inDrawer={false} />
+                    </div>
 
-                        <Box>
-                            <Stack
-                                direction="row"
-                                gap="4px"
-                                style={{
-                                    width: "100%",
-                                    background: "var(--color-bg-glass)",
-                                    borderRadius: "var(--radius-md)",
-                                    padding: "4px",
-                                    border: "1px solid var(--color-border)",
-                                }}
-                            >
-                                <Button
-                                    variant={sortOption === 'newest' ? 'solid' : 'ghost'}
-                                    onClick={() => handleSortClick('newest')}
-                                    style={{ flex: 1, padding: "0.5rem 0.2rem", boxShadow: 'none', minWidth: 0 }}
-                                >
-                                    <Stack direction="row" align="center" justify="center" gap="4px" style={{ width: "100%" }}>
-                                        <Typography
-                                            variant="body"
-                                            style={{
-                                                fontSize: "0.85rem",
-                                                fontWeight: sortOption === 'newest' ? 600 : 500,
-                                                color: 'inherit',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis'
-                                            }}
-                                        >
-                                            New
-                                        </Typography>
-                                        <Icon
-                                            src={getIcon('expandMore')}
-                                            alt="sort dir"
-                                            size={16}
-                                            style={{
-                                                transform: sortOption === 'newest' && sortDirection === 'asc' ? 'rotate(180deg)' : 'none',
-                                                opacity: sortOption === 'newest' ? 0.8 : 0,
-                                                transition: 'transform 0.2s ease'
-                                            }}
-                                        />
-                                    </Stack>
-                                </Button>
-
-                                <Button
-                                    variant={sortOption === 'alphabet' ? 'solid' : 'ghost'}
-                                    onClick={() => handleSortClick('alphabet')}
-                                    style={{ flex: 1, padding: "0.5rem 0.2rem", boxShadow: 'none', minWidth: 0 }}
-                                >
-                                    <Stack direction="row" align="center" justify="center" gap="4px" style={{ width: "100%" }}>
-                                        <Typography
-                                            variant="body"
-                                            style={{
-                                                fontSize: "0.85rem",
-                                                fontWeight: sortOption === 'alphabet' ? 600 : 500,
-                                                color: 'inherit',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis'
-                                            }}
-                                        >
-                                            A-Z
-                                        </Typography>
-                                        <Icon
-                                            src={getIcon('expandMore')}
-                                            alt="sort dir"
-                                            size={16}
-                                            style={{
-                                                transform: sortOption === 'alphabet' && sortDirection === 'asc' ? 'rotate(180deg)' : 'none',
-                                                opacity: sortOption === 'alphabet' ? 0.8 : 0,
-                                                transition: 'transform 0.2s ease'
-                                            }}
-                                        />
-                                    </Stack>
-                                </Button>
-                            </Stack>
-                        </Box>
-
-                        <Divider />
-
-                        <Stack gap="0.5rem" style={{ paddingBottom: "1.5rem", flexShrink: 0 }}>
-                            <Button
-                                variant="ghost"
-                                onClick={() => setIsTypesExpanded(!isTypesExpanded)}
-                                style={{ padding: "0.5rem", boxShadow: "none" }}
-                            >
-                                <Stack direction="row" justify="space-between" align="center" style={{ width: "100%" }}>
-                                    <Typography variant="body" style={{ fontWeight: 600, fontSize: "0.95rem", color: "inherit" }}>
-                                        Game Types
-                                    </Typography>
-                                    <Icon
-                                        src={getInverseIcon("expandMore")}
-                                        size={16}
-                                        style={{ transform: isTypesExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
-                                    />
-                                </Stack>
-                            </Button>
-
-                            {isTypesExpanded && (
-                                <Stack gap="0.5rem" style={{ padding: "0.25rem 0.5rem" }}>
-                                    {AVAILABLE_ROOM_TYPES.map(t => (
-                                        <Stack key={t} direction="row" justify="space-between" align="center">
-                                            <Typography variant="body" style={{ fontSize: "0.85rem" }}>{ROOM_TYPE_LABELS[t]}</Typography>
-                                            <CheckBox
-                                                variant="outline"
-                                                checked={selectedTypes.includes(t)}
-                                                onChange={() => handleToggleType(t)}
-                                            />
-                                        </Stack>
-                                    ))}
-                                </Stack>
-                            )}
-                        </Stack>
-                    </Stack>
-
-                    <Box style={{
-                        height: "100%",
-                        overflowY: "auto",
-                        paddingRight: "0.5rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "2.5rem",
-                        padding: "1.25rem 1.5rem",
-                    }}>
-                        {!rooms || rooms.length === 0 ? (
-                            <Box style={{ textAlign: "center", padding: "3rem" }}>
-                                <Typography variant="body" style={{ opacity: 0.7 }}>No rooms available. Be the first to create one!</Typography>
+                    <Box className="custom-scrollbar rooms-main-content">
+                        {((appliedFilters.name?.trim().length || 0) > 0) && displayGroups.every(g => g.rooms.length === 0) ? (
+                            <Box style={{ textAlign: "center", padding: "4rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
+                                <Typography variant="h3" style={{ opacity: 0.8 }}>No rooms found matching your filters.</Typography>
+                                <Button variant="outline" onClick={handleResetFilters}>Reset Filters</Button>
                             </Box>
                         ) : (
-                            groupedRooms.map(group => (
+                            displayGroups.map(group => (
                                 <Box key={group.type}>
                                     <Box style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
                                         <Typography variant="h2">{ROOM_TYPE_LABELS[group.type]}</Typography>
@@ -393,18 +278,7 @@ export default function Rooms() {
 
                                     <Grid columns="repeat(auto-fill, minmax(180px, 1fr))" gap="1.5rem" justifyItems="center" style={{ justifyContent: "start" }}>
                                         {group.rooms.map(room => (
-                                            <Card
-                                                key={room.id}
-                                                style={{
-                                                    width: "180px",
-                                                    height: "180px",
-                                                    textAlign: "center",
-                                                    padding: "20px",
-                                                    display: "flex",
-                                                    flexDirection: "column",
-                                                    gap: "10px",
-                                                }}
-                                            >
+                                            <Card key={room.id} style={{ width: "180px", height: "180px", textAlign: "center", padding: "20px", display: "flex", flexDirection: "column", gap: "10px" }}>
                                                 <Typography variant="h3" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={room.name}>
                                                     {room.name}
                                                 </Typography>
@@ -426,31 +300,40 @@ export default function Rooms() {
                             ))
                         )}
                     </Box>
-
-                </Grid>
+                </div>
             </Container>
 
+            <AnimatePresence>
+                {isMobileFiltersOpen && isMobile && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+                            style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.4)", zIndex: 1000, backdropFilter: "blur(4px)" }}
+                            onClick={() => setIsMobileFiltersOpen(false)}
+                        />
+                        <motion.div
+                            initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                            style={{ position: "fixed", top: 0, left: 0, bottom: 0, width: "300px", maxWidth: "85vw", background: "var(--color-bg)", zIndex: 1001, boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column" }}
+                        >
+                            <Box style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.5rem", borderBottom: "1px solid var(--color-border)" }}>
+                                <Typography variant="h2">Filters</Typography>
+                                <Button variant="ghost" onClick={() => setIsMobileFiltersOpen(false)} style={{ padding: "0.25rem", boxShadow: "none" }}>
+                                    <Icon src={getIcon("close")} size={20} alt="close" />
+                                </Button>
+                            </Box>
+                            <Box style={{ flex: 1, overflow: "hidden", padding: "1rem 0" }}>
+                                <RoomsFilterPanel {...filterPanelProps} inDrawer={true} />
+                            </Box>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
 
             <Modal isOpen={isCreateRoomModalOpen} onClose={() => { setIsCreateRoomModalOpen(false); setValidationError(""); }} title="Create Room">
                 <Box style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                     <Textfield value={roomName} onChange={handleRoomNameChange} placeholder="Room name" />
-                    <ComboBox
-                        options={AVAILABLE_ROOM_TYPES.map((type) => ({
-                            value: type,
-                            label: ROOM_TYPE_LABELS[type],
-                        }))}
-                        value={roomType}
-                        onValueChange={setRoomType}
-                        placeholder="Choose room type"
-                        searchable
-                    />
-
-                    {validationError && (
-                        <Typography variant="caption" style={{ color: "red", textAlign: "center" }}>
-                            {validationError}
-                        </Typography>
-                    )}
-
+                    <ComboBox options={AVAILABLE_ROOM_TYPES.map((type) => ({ value: type, label: ROOM_TYPE_LABELS[type] }))} value={roomType} onValueChange={setRoomType} placeholder="Choose room type" searchable />
+                    {validationError && <Typography variant="caption" style={{ color: "red", textAlign: "center" }}>{validationError}</Typography>}
                     <Button variant="solid" onClick={handleCreateRoom}>Create</Button>
                 </Box>
             </Modal>

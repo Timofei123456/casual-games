@@ -17,6 +17,11 @@
     z-index: 1000;
 }
 
+.menu-align-left .menu-dropdown {
+    right: auto;
+    left: 0;
+}
+
 .menu-list {
     display: flex;
     flex-direction: column;
@@ -56,4 +61,12 @@
     opacity: 0.5;
     cursor: default;
     pointer-events: none;
+}
+
+.menu-trigger .menu-chevron-icon {
+    transition: transform 0.2s ease;
+}
+
+.menu-trigger.open .menu-chevron-icon {
+    transform: rotate(180deg);
 }

@@ -1,4 +1,6 @@
-import { Box, Button, Input, Stack, Typography } from "../../../../ui";
+import { Box, Button, FormField, Stack, Typography } from "../../../../ui";
+import type { PlayerResponse } from "../../../../models/Room";
+import { validateAmountInput } from "../../../../utils/SecurityUtils";
 
 interface BettingPanelProps {
     balance: number | undefined;
@@ -6,7 +8,7 @@ interface BettingPanelProps {
     betPlaced: boolean;
     ready: boolean;
     playerBetMap: Record<string, number> | undefined;
-    players: Record<string, string> | undefined;
+    players: Record<string, PlayerResponse> | undefined;
     isConnected: boolean;
     onBetInputChange: (value: string) => void;
     onPlaceBet: () => void;
@@ -27,6 +29,13 @@ export function BettingPanel({
 }: BettingPanelProps) {
     const hasBets = playerBetMap && Object.keys(playerBetMap).length > 0;
 
+    const handleBetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const validated = validateAmountInput(e.target.value);
+        if (validated !== null) {
+            onBetInputChange(validated);
+        }
+    };
+
     return (
         <Stack gap="0.75rem" style={{
             padding: "1rem",
@@ -41,7 +50,7 @@ export function BettingPanel({
                     <Stack gap="0.25rem">
                         {Object.entries(playerBetMap!).map(([guid, bet]) => (
                             <Box key={guid} style={{ display: "flex", justifyContent: "space-between" }}>
-                                <Typography variant="body">{players?.[guid] ?? guid}</Typography>
+                                <Typography variant="body">{players?.[guid]?.username ?? guid}</Typography>
                                 <Typography variant="body" style={{ color: "var(--color-income-text)", fontWeight: 600 }}>
                                     ${bet}
                                 </Typography>
@@ -61,10 +70,11 @@ export function BettingPanel({
                 </Typography>
             )}
 
-            <Input
-                type="number"
+            <FormField
+                type="text"
+                inputMode="decimal"
                 value={betInput}
-                onChange={e => onBetInputChange(e.target.value)}
+                onChange={handleBetChange}
                 placeholder="Enter bet amount"
                 disabled={betPlaced || !isConnected}
             />

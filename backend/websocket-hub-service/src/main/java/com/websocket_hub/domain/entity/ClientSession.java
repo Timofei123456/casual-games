@@ -1,5 +1,7 @@
 package com.websocket_hub.domain.entity;
 
+import com.security_starter.enums.Role;
+import com.security_starter.enums.Status;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,19 +22,19 @@ public class ClientSession {
     @EqualsAndHashCode.Include
     private final UUID guid;
 
-    @EqualsAndHashCode.Include
     private final String username;
 
-    @EqualsAndHashCode.Include
     private final String email;
 
-    @EqualsAndHashCode.Include
-    private final String role;
+    private final Role role;
 
-    @EqualsAndHashCode.Include
-    private final String status;
+    private final Status status;
 
     private final WebSocketSession session;
+
+    private final String linkProfilePicture;
+
+    private final String linkProfilePictureMini;
 
     @Builder.Default
     private Instant connectedAt = Instant.now();

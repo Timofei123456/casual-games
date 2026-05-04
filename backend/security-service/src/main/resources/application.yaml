@@ -10,19 +10,25 @@ spring:
       - net.devh.boot.grpc.server.autoconfigure.GrpcServerSecurityAutoConfiguration
 
   datasource:
-    url: jdbc:postgresql://${SECURITY_POSTGRES_HOST}:${SECURITY_POSTGRES_PORT}/${SECURITY_POSTGRES_DB}
-    username: ${SECURITY_POSTGRES_USERNAME}
-    password: ${SECURITY_POSTGRES_PASSWORD}
+    url: jdbc:postgresql://${SECURITY_POSTGRES_HOST:localhost}:${SECURITY_POSTGRES_PORT:5432}/${SECURITY_POSTGRES_DB:diploma}?currentSchema=${SECURITY_DB_DEFAULT_SCHEMA:security_service}
+    username: ${SECURITY_POSTGRES_USERNAME:postgres}
+    password: ${SECURITY_POSTGRES_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     enabled: true
+    default-schema: security_service
+    liquibase-schema: security_service
 
   jpa:
     hibernate:
       ddl-auto: none
-    show-sql: true
+    properties:
+      hibernate:
+        default_schema: security_service
+        jdbc:
+          time_zone: UTC
 
   data:
     redis:
@@ -35,20 +41,20 @@ spring:
   security:
     jwt:
       secret: ${JWT_SECRET}
-      access-expiration: ${JWT_ACCESS_EXPIRATION:900000}      # 15 minutes default
+      access-expiration: ${JWT_ACCESS_EXPIRATION:600000}      # 10 minutes default
       refresh-expiration: ${JWT_REFRESH_EXPIRATION:86400000}  # 24 hours default
     service-whitelist:
-      enabled: true
+      enabled: ${SERVICE_WHITELIST_ENABLED:true}
       hosts: [ "127.0.0.1" ]
 
 grpc:
   server:
-    port: 7080
+    port: 7090
     security:
       enabled: false
   client:
     user-service:
-      address: static://localhost:7093
+      address: ${GRPC_USER_SERVICE_ADDRESS:static://localhost:7093}
       negotiation-type: plaintext
       keep-alive-time: 30s
       keep-alive-timeout: 5s
@@ -60,6 +66,9 @@ grpc:
 
 server:
   port: 8080
+  forward-headers-strategy: framework
+
+server-url: ${SERVER_URL:http://localhost:8080}
 
 kafka:
   enabled: true
@@ -71,12 +80,21 @@ kafka:
   topics:
     user: ${KAFKA_USER_TOPIC:user}
 
-app:
-  user-service:
-    url: http://localhost:8083
+ws-ticket:
+  ttl-seconds: ${WS_TICKET_TTL_SECONDS:30}
 
 logging:
   level:
-    org.springframework.web: DEBUG
-    org.springframework.security: DEBUG
-    com.grpc_utils: DEBUG
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    org.springframework.security: ${LOG_LEVEL_SPRING_SECURITY:INFO}
+    com.grpc_utils: ${LOG_LEVEL_GRPC:INFO}
+
+springdoc:
+  preLoadingEnabled: true
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html
+    operationsSorter: alpha

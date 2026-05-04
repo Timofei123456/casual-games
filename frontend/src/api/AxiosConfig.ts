@@ -1,10 +1,10 @@
-import { SECURITY_SERVICE_URL } from './ApiDictionary';
 import axios from 'axios';
+import { API_GATEWAY_URL } from './ApiDictionary';
 
 export const client = axios.create({
-   baseURL: SECURITY_SERVICE_URL,
-   withCredentials: true,
-   headers: {
-      'Content-Type': 'application/json',
-   },
+    baseURL: API_GATEWAY_URL,
+    withCredentials: true,
+    headers: {
+        'Content-Type': 'application/json',
+    },
 });

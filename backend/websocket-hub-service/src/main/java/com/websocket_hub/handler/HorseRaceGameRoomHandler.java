@@ -1,11 +1,10 @@
 package com.websocket_hub.handler;
 
-import com.websocket_hub.client.BankServiceClient;
+import com.casualgames.grpc.transaction.GameTransactionResponse;
+import com.casualgames.grpc.transaction.HorseRaceTransactionRequest;
 import com.websocket_hub.client.GameServiceClient;
 import com.websocket_hub.domain.dto.client.HorseRaceGameInternalRequest;
 import com.websocket_hub.domain.dto.client.HorseRaceGameInternalResponse;
-import com.websocket_hub.domain.dto.client.HorseRaceTransactionInternalRequest;
-import com.websocket_hub.domain.dto.client.HorseRaceTransactionInternalResponse;
 import com.websocket_hub.domain.dto.client.UserInternalResponse;
 import com.websocket_hub.domain.dto.event.CountdownExpiredEvent;
 import com.websocket_hub.domain.dto.message.HorseRaceGameMessage;
@@ -16,9 +15,11 @@ import com.websocket_hub.domain.enums.RoomStatus;
 import com.websocket_hub.domain.enums.events.HorseRaceEvent;
 import com.websocket_hub.manager.HorseRaceGameRoomManager;
 import com.websocket_hub.manager.SessionManager;
+import com.websocket_hub.mapper.DefaultMessageMapper;
+import com.websocket_hub.mapper.GameTransactionMapper;
 import com.websocket_hub.mapper.HorseRaceGameMessageMapper;
-import com.websocket_hub.mapper.HorseRaceTransactionMapper;
 import com.websocket_hub.serializer.MessageDeserializer;
+import com.websocket_hub.service.grpc.client.GrpcGameTransactionClient;
 import com.websocket_hub.util.WebSocketUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -30,37 +31,36 @@ import org.springframework.web.socket.WebSocketSession;
 import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 @Slf4j
 public class HorseRaceGameRoomHandler extends AppWebSocketHandler<HorseRaceGameRoomManager> {
 
-    private final MessageDeserializer messageDeserializer;
-
     private final HorseRaceGameMessageMapper horseRaceMessageMapper;
 
-    private final HorseRaceTransactionMapper horseRaceTransactionMapper;
+    private final GameTransactionMapper gameTransactionMapper;
 
     private final GameServiceClient gameServiceClient;
 
-    private final BankServiceClient bankServiceClient;
+    private final GrpcGameTransactionClient grpcGameTransactionClient;
 
     public HorseRaceGameRoomHandler(
             SessionManager sessionManager,
             HorseRaceGameRoomManager roomManager,
             WebSocketErrorHandler errorHandler,
             MessageDeserializer messageDeserializer,
+            DefaultMessageMapper defaultMessageMapper,
             HorseRaceGameMessageMapper horseRaceMessageMapper,
-            HorseRaceTransactionMapper horseRaceTransactionMapper,
+            GameTransactionMapper gameTransactionMapper,
             GameServiceClient gameServiceClient,
-            BankServiceClient bankServiceClient
+            GrpcGameTransactionClient grpcGameTransactionClient
     ) {
-        super(sessionManager, roomManager, errorHandler);
-        this.messageDeserializer = messageDeserializer;
+        super(sessionManager, roomManager, errorHandler, messageDeserializer, defaultMessageMapper);
         this.horseRaceMessageMapper = horseRaceMessageMapper;
-        this.horseRaceTransactionMapper = horseRaceTransactionMapper;
         this.gameServiceClient = gameServiceClient;
-        this.bankServiceClient = bankServiceClient;
+        this.gameTransactionMapper = gameTransactionMapper;
+        this.grpcGameTransactionClient = grpcGameTransactionClient;
     }
 
     @Override
@@ -161,10 +161,16 @@ public class HorseRaceGameRoomHandler extends AppWebSocketHandler<HorseRaceGameR
         try {
             Map<UUID, String> participants = roomManager.getParticipants(roomId);
 
+            Map<UUID, Integer> players = roomManager.getPlayerBets(roomId).stream()
+                    .collect(Collectors.toMap(
+                            HorseRacePlayerBet::getGuid,
+                            HorseRacePlayerBet::getHorseIndex
+                    ));
+
             HorseRaceGameInternalRequest startRequest = horseRaceMessageMapper.toStartRequest(
                     HorseRaceEvent.START,
                     roomId,
-                    participants,
+                    players,
                     horseRaceGamePreset.horseCount()
             );
 
@@ -222,16 +228,16 @@ public class HorseRaceGameRoomHandler extends AppWebSocketHandler<HorseRaceGameR
                 return;
             }
 
-            HorseRaceTransactionInternalRequest request = horseRaceTransactionMapper.toInternalRequest(
+            HorseRaceTransactionRequest request = gameTransactionMapper.toHorseRaceRequest(
                     roomId,
                     roomManager.getRoomType(),
                     winnerHorseIndex,
                     bets
             );
 
-            HorseRaceTransactionInternalResponse response = bankServiceClient.sendHorseRaceGameResults(request);
+            GameTransactionResponse response = grpcGameTransactionClient.saveHorseRaceGameResults(request);
 
-            log.info("Bank-service response for room={}: status={}, message={}, transactions={}", roomId, response.status(), response.message(), response.transactionsCreated());
+            log.info("Bank-service response for room={}: transactions={}", roomId, response.getTransactionCount());
         } catch (Exception e) {
             log.error("Failed to process transactions for room={}", roomId, e);
         }

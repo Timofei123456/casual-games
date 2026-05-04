@@ -33,11 +33,12 @@ export const validateEmail = (email: string): string => {
     return email
         .trim()
         .replace(/\s+/g, "")
+        .toLowerCase()
         .slice(0, 200);
 };
 
 export const isValidEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     return emailRegex.test(email);
 };
 
@@ -50,6 +51,26 @@ export const validateUsername = (username: string): string => {
         .replace(/[^a-zA-Zа-яА-Я0-9_]/g, '')
         .trim()
         .slice(0, 50)
+};
+
+export const validateAmountInput = (input: string): string | null => {
+    let val = input.replace(',', '.');
+
+    if (val === '') {
+        return '';
+    }
+
+    if (val.startsWith('.')) {
+        val = '0' + val;
+    }
+
+    const regex = /^\d{0,5}(\.\d{0,2})?$/;
+
+    if (regex.test(val)) {
+        return val;
+    }
+
+    return null;
 };
 
 export const escapeHtml = (text: string): string => {
@@ -119,6 +140,39 @@ const validateValue = (value: unknown): unknown => {
     }
 
     return value;
+};
+
+export const validateAndReadJpeg = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const fileName = file.name.toLowerCase();
+
+        if (!fileName.endsWith(".jpg") && !fileName.endsWith(".jpeg")) {
+            return reject("Please select a valid JPEG image (.jpg or .jpeg).");
+        }
+
+        const headerReader = new FileReader();
+
+        headerReader.onloadend = (event) => {
+            if (event.target?.readyState === FileReader.DONE) {
+                const arr = new Uint8Array(event.target.result as ArrayBuffer);
+
+                const hasJpegMagicNumbers = arr.length >= 2 && arr[0] === 0xFF && arr[1] === 0xD8;
+
+                if (!hasJpegMagicNumbers) {
+                    return reject("The file content does not match a valid JPEG image.");
+                }
+
+                const dataReader = new FileReader();
+                dataReader.onload = () => resolve(dataReader.result as string);
+                dataReader.onerror = () => reject("Failed to read the file data.");
+                dataReader.readAsDataURL(file);
+            }
+        };
+
+        headerReader.onerror = () => reject("Failed to analyze the file structure.");
+
+        headerReader.readAsArrayBuffer(file.slice(0, 4));
+    });
 };
 
 export const getSecureLocalStorage = <T>(key: string): T | null => {

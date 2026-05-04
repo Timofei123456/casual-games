@@ -5,41 +5,123 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+  http:
+    codecs:
+      max-in-memory-size: 6MB
+
+  data:
+    redis:
+      enabled: ${REDIS_ENABLED:true}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 500ms
+      connect-timeout: 1s
+
   cloud:
     gateway:
-      routes:
-        - id: user-service
-          uri: http://localhost:8083
-          predicates:
-            - Path=/user-service/**
-          filters:
-            - StripPrefix=1
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:3000}
+            response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter:
+                  replenishRate: ${RATE_LIMIT_REPLENISH_RATE:10}
+                  burstCapacity: ${RATE_LIMIT_BURST_CAPACITY:20}
+                  requestedTokens: 1
+                key-resolver: "#{@keyResolver}"
+          routes:
+            - id: user-service
+              uri: ${USER_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/user-service/**
+              filters:
+                - StripPrefix=1
 
-        - id: security-service
-          uri: http://localhost:8080
-          predicates:
-            - Path=/security-service/**
-          filters:
-            - StripPrefix=1
+            - id: security-service
+              uri: ${SECURITY_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/security-service/**
+              filters:
+                - StripPrefix=1
 
-        - id: game-service
-          uri: http://localhost:8082
-          predicates:
-            - Path=/game-service/**
-          filters:
-            - StripPrefix=1
+            - id: game-service
+              uri: ${GAME_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/game-service/**
+              filters:
+                - StripPrefix=1
 
-        - id: websocket-service
-          uri: http://localhost:8081
-          predicates:
-            - Path=/websocket-service/**
-          filters:
-            - StripPrefix=1
+            - id: websocket-hub-service
+              uri: ${WEBSOCKET_HUB_URL:http://localhost:8081}
+              predicates:
+                - Path=/websocket-hub-service/**
+              filters:
+                - StripPrefix=1
+
+            - id: bank-service
+              uri: ${BANK_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/bank-service/**
+              filters:
+                - StripPrefix=1
+
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS_URLS:http://localhost:5173,https://localhost:5173}
 
   security:
     jwt:
       secret: ${JWT_SECRET}
-
+      algorithm: ${JWT_ALGORITHM:HS256}
+      public-paths:
+        - /security-service/auth/login
+        - /security-service/auth/register
+        - /security-service/auth/refresh
+        - /security-service/auth/logout
+        - /actuator/health
+        - /actuator/info
+        - /swagger-ui.html
+        - /swagger-ui/**
+        - /webjars/**
+        - /v3/api-docs/**
+        - /security-service/v3/api-docs/**
+        - /user-service/v3/api-docs/**
+        - /bank-service/v3/api-docs/**
+        - /game-service/v3/api-docs/**
+        - /websocket-hub-service/v3/api-docs/**
+        - /bank-service/transactions/top-wins
 
 server:
-  port: 8088
+  port: 8888
+  max-http-request-header-size: 16384
+
+server-url: ${SERVER_URL:http://localhost:8888}
+
+logging:
+  level:
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    org.springframework.cloud.gateway: ${LOG_LEVEL_GATEWAY:INFO}
+
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html
+    operationsSorter: alpha
+    urls:
+      - url: /security-service/v3/api-docs
+        name: Security-service API
+      - url: /user-service/v3/api-docs
+        name: User-service API
+      - url: /bank-service/v3/api-docs
+        name: Bank-service API
+      - url: /game-service/v3/api-docs
+        name: Game-service API
+      - url: /websocket-hub-service/v3/api-docs
+        name: Websocket-hub-service API

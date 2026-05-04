@@ -1,12 +1,11 @@
 package com.websocket_hub.handler;
 
-import com.websocket_hub.client.BankServiceClient;
+import com.casualgames.grpc.transaction.DurakTransactionRequest;
+import com.casualgames.grpc.transaction.GameTransactionResponse;
 import com.websocket_hub.client.GameServiceClient;
 import com.websocket_hub.domain.dto.client.DurakGameInternalRequest;
 import com.websocket_hub.domain.dto.client.DurakGameInternalResponse;
 import com.websocket_hub.domain.dto.client.DurakPlayerViewResponse;
-import com.websocket_hub.domain.dto.client.DurakTransactionInternalRequest;
-import com.websocket_hub.domain.dto.client.DurakTransactionInternalResponse;
 import com.websocket_hub.domain.dto.client.UserInternalResponse;
 import com.websocket_hub.domain.dto.message.DurakGameMessage;
 import com.websocket_hub.domain.entity.ClientSession;
@@ -18,9 +17,11 @@ import com.websocket_hub.domain.enums.events.DurakGameEvent;
 import com.websocket_hub.exception.GameException;
 import com.websocket_hub.manager.DurakGameRoomManager;
 import com.websocket_hub.manager.SessionManager;
+import com.websocket_hub.mapper.DefaultMessageMapper;
 import com.websocket_hub.mapper.DurakGameMessageMapper;
-import com.websocket_hub.mapper.DurakTransactionMapper;
+import com.websocket_hub.mapper.GameTransactionMapper;
 import com.websocket_hub.serializer.MessageDeserializer;
+import com.websocket_hub.service.grpc.client.GrpcGameTransactionClient;
 import com.websocket_hub.service.scheduler.DurakTurnTimerScheduler;
 import com.websocket_hub.util.WebSocketUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -36,15 +37,13 @@ import java.util.UUID;
 @Slf4j
 public class DurakGameRoomHandler extends AppWebSocketHandler<DurakGameRoomManager> {
 
-    private final MessageDeserializer messageDeserializer;
-
     private final DurakGameMessageMapper durakGameMessageMapper;
 
-    private final DurakTransactionMapper durakTransactionMapper;
+    private final GameTransactionMapper gameTransactionMapper;
 
     private final GameServiceClient gameServiceClient;
 
-    private final BankServiceClient bankServiceClient;
+    private final GrpcGameTransactionClient grpcGameTransactionClient;
 
     private final DurakTurnTimerScheduler turnTimerScheduler;
 
@@ -53,18 +52,18 @@ public class DurakGameRoomHandler extends AppWebSocketHandler<DurakGameRoomManag
             DurakGameRoomManager roomManager,
             WebSocketErrorHandler errorHandler,
             MessageDeserializer messageDeserializer,
+            DefaultMessageMapper defaultMessageMapper,
             DurakGameMessageMapper durakGameMessageMapper,
-            DurakTransactionMapper durakTransactionMapper,
+            GameTransactionMapper gameTransactionMapper,
             GameServiceClient gameServiceClient,
-            BankServiceClient bankServiceClient,
+            GrpcGameTransactionClient grpcGameTransactionClient,
             DurakTurnTimerScheduler turnTimerScheduler
     ) {
-        super(sessionManager, roomManager, errorHandler);
-        this.messageDeserializer = messageDeserializer;
+        super(sessionManager, roomManager, errorHandler, messageDeserializer, defaultMessageMapper);
         this.durakGameMessageMapper = durakGameMessageMapper;
-        this.durakTransactionMapper = durakTransactionMapper;
+        this.gameTransactionMapper = gameTransactionMapper;
         this.gameServiceClient = gameServiceClient;
-        this.bankServiceClient = bankServiceClient;
+        this.grpcGameTransactionClient = grpcGameTransactionClient;
         this.turnTimerScheduler = turnTimerScheduler;
     }
 
@@ -201,15 +200,16 @@ public class DurakGameRoomHandler extends AppWebSocketHandler<DurakGameRoomManag
 
             List<PlayerBet> playerBets = roomManager.getPlayerBets(roomId);
 
-            DurakTransactionInternalRequest transactionRequest = durakTransactionMapper.toInternalRequest(
+            DurakTransactionRequest transactionRequest = gameTransactionMapper.toDurakRequest(
                     roomId,
                     roomManager.getRoomType(),
                     playerBets,
                     winnerId
             );
-            DurakTransactionInternalResponse transactionResponse = bankServiceClient.sendDurakGameResults(transactionRequest);
 
-            log.info("Bank-service response: status={}, message={}, transactions={}", transactionResponse.status(), transactionResponse.message(), transactionResponse.transactionsCreated());
+            GameTransactionResponse transactionResponse = grpcGameTransactionClient.saveDurakGameResults(transactionRequest);
+
+            log.info("Bank-service response: transactions={}", transactionResponse.getTransactionCount());
 
         } catch (Exception e) {
             log.error("Failed to process game over for room={}", roomId, e);

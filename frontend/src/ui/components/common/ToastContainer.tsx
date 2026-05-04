@@ -1,6 +1,9 @@
+import { createPortal } from "react-dom";
 import "../styles/toastcontainer.css";
 import type { ToastItem, ToastLayer } from "../../models/ToastTypes";
 import { classNames } from "../../utils/classNames";
+import { Icon } from "./Icon";
+import { useThemedIcon } from "../../hooks/useThemedIcon";
 
 interface ToastItemProps {
     toast: ToastItem;
@@ -9,6 +12,7 @@ interface ToastItemProps {
 
 function ToastItemEl({ toast, onDismiss }: ToastItemProps) {
     const isInfo = toast.variant.endsWith("-info");
+    const { getIcon } = useThemedIcon();
 
     return (
         <div
@@ -32,7 +36,7 @@ function ToastItemEl({ toast, onDismiss }: ToastItemProps) {
                 onClick={() => onDismiss(toast.id)}
                 aria-label="Close notification"
             >
-                ×
+                <Icon src={getIcon("close")} size={16} alt="close" />
             </button>
 
             {!toast.isClosing && (
@@ -42,7 +46,7 @@ function ToastItemEl({ toast, onDismiss }: ToastItemProps) {
     );
 }
 
-// ─── ToastContainer ──────────────────────────────────────────────────────────
+// -------------- ToastContainer --------------
 
 interface ToastContainerProps {
     layer: ToastLayer;
@@ -53,7 +57,7 @@ interface ToastContainerProps {
 export function ToastContainer({ layer, toasts, dismiss }: ToastContainerProps) {
     if (toasts.length === 0) return null;
 
-    return (
+    return createPortal(
         <div className={classNames("toast-container", `toast-container--${layer}`)}>
             {toasts.map(toast => (
                 <ToastItemEl
@@ -62,6 +66,7 @@ export function ToastContainer({ layer, toasts, dismiss }: ToastContainerProps) 
                     onDismiss={dismiss}
                 />
             ))}
-        </div>
+        </div>,
+        document.body
     );
 }

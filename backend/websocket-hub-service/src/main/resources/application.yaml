@@ -14,6 +14,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
 
   security:
     jwt:
@@ -31,21 +35,41 @@ spring:
 
 server:
   port: 8081
+  forward-headers-strategy: framework
+
+server-url: ${SERVER_URL:http://localhost:8081}
+
+grpc:
+  client:
+    user-service:
+      address: ${GRPC_USER_SERVICE_ADDRESS:static://localhost:7093}
+      negotiation-type: plaintext
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
+    bank-service:
+      address: ${GRPC_BANK_SERVICE_ADDRESS:static://localhost:7094}
+      negotiation-type: plaintext
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
+  client-custom:
+    timeout-seconds: 30
+    retry:
+      max-attempts: 3
+      delay-milliseconds: 1000
 
 app:
   game-service:
-    url: http://localhost:8082
-  user-service:
-    url: http://localhost:8083
-  bank-service:
-    url: http://localhost:8084
+    url: ${GAME_SERVICE_URL:http://localhost:8082}
 
-scheduler:
+cron:
   room-cleanup:
-    scheduler-delay-minutes: 5
-    scheduler-initial-delay-minutes: 5
+    cleanup-rooms: ${CRON_CLEANUP_ROOMS:0 0/5 * * * *}
+    cleanup-pending-delete-rooms: ${CRON_CLEANUP_PENDING_DELETE_ROOMS:0 2/5 * * * *}
     finished-kick-timeout-minutes: 2
-    pending-delete-delay-seconds: 2
+    waiting-stale-timeout-minutes: 30
+    tic-tac-toe-in-progress-timeout-minutes: 20
+    durak-in-progress-timeout-minutes: 60
+    de-coder-in-progress-timeout-minutes: 60
 
 kafka:
   enabled: ${KAFKA_ENABLED:true}
@@ -57,5 +81,15 @@ kafka:
 
 logging:
   level:
-    org.springframework.web: DEBUG
-    org.springframework.web.websocket: DEBUG
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    org.springframework.web.websocket: ${LOG_LEVEL_WEBSOCKET:INFO}
+    com.grpc_utils: ${LOG_LEVEL_GRPC:INFO}
+
+springdoc:
+  preLoadingEnabled: true
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
+    path: /swagger-ui.html
